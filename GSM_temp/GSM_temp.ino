@@ -1,10 +1,17 @@
 #define TINY_GSM_MODEM_SIM800
 #include <TinyGsmClient.h>
-#include <BlynkSimpleSIM800.h>
+
 #include <Wire.h>
 #include <OneWire.h> 
 #include <DallasTemperature.h>
+#include "keys.h"
 
+#include <WiFi.h>
+#include <WiFiClient.h>
+// #include <BlynkSimpleSIM800.h>
+#include <BlynkSimpleEsp32.h>
+
+bool wifi_debug = true;
 
 // TTGO T-Call pin definitions
   #define MODEM_RST            5
@@ -22,32 +29,20 @@
   #define SerialMon Serial
   // Hardware Serial on Mega, Leonardo, Micro
   #define SerialAT Serial1
-
-// SIM Specific Information
-  const char apn[]  = "TM";
-  const char user[] = "";
-  const char pass[] = "";
-  TinyGsm modem(SerialAT);
-
-//Blynk Specific information
-  #define blynk_server "52.31.240.39"
-  #define blynk_port 8080
-  // const char auth[] = "iSkEJlD4NCjhvWCQnNTZfsukQV5-7biV"; //Device 1
-  const char auth[] = "32LUzJ-2IJcHNn3kzqaJO7EL7Se7Srmr"; //Device 2
-  // const char auth[] = "w-Xzo7tWDE89Lmi7F8SECMEQ0RM2nvZu"; //Device 3
   #define BLYNK_PRINT Serial    
   #define BLYNK_HEARTBEAT 30
-
 
 // Data wire for temperature sensor is plugged into pin 2 on the Arduino 
   #define ONE_WIRE_BUS 14 
   OneWire oneWire(ONE_WIRE_BUS); 
   DallasTemperature sensors(&oneWire);
+  TinyGsm modem(SerialAT);
 
 //Global Variables
-float Celcius = 0;
-float battery_voltage = 0;
-float battery_percent = 0;
+  float Celcius = 0;
+  float battery_voltage = 0;
+  float battery_percent = 0;
+
 
 void setup()
 {
@@ -73,40 +68,46 @@ void setup()
   SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   delay(3000);
 
-  // Restart takes quite some time
-  // To skip it, call init() instead of restart()
-  SerialMon.println("Initializing modem...");
-  modem.restart();
+  if(!wifi_debug){
+    // Restart takes quite some time
+    // To skip it, call init() instead of restart()
+    SerialMon.println("Initializing modem...");
+    modem.restart();
 
-  String modemInfo = modem.getModemInfo();
-  SerialMon.print("Modem: ");
-  SerialMon.println(modemInfo);
+    String modemInfo = modem.getModemInfo();
+    SerialMon.print("Modem: ");
+    SerialMon.println(modemInfo);
 
-  // Unlock your SIM card with a PIN
-  //modem.simUnlock("1234");
+    // Unlock your SIM card with a PIN
+    //modem.simUnlock("1234");
 
-   SerialMon.print("Waiting for network...");
-  if (!modem.waitForNetwork(240000L)) {
-    SerialMon.println(" fail");
-    delay(10000);
-    return;
+      SerialMon.print("Waiting for network...");
+    if (!modem.waitForNetwork(240000L)) {
+      SerialMon.println(" fail");
+      delay(10000);
+      return;
+    }
+    SerialMon.println(" OK");
+
+    if (modem.isNetworkConnected()) {
+      SerialMon.println("Network connected");
+    }
+
+    SerialMon.print(F("Connecting to APN: "));
+    SerialMon.print(apn);
+    if (!modem.gprsConnect(apn, user, sim_pass)) {
+      SerialMon.println(" fail");
+      delay(10000);
+      return;
+    }
+    SerialMon.println(" OK");
+
+    // Blynk.begin(auth, modem, apn, user, pass, blynk_server, blynk_port);
   }
-  SerialMon.println(" OK");
-
-  if (modem.isNetworkConnected()) {
-    SerialMon.println("Network connected");
+  else{
+    Blynk.begin(auth, ssid, pass);  
   }
 
-  SerialMon.print(F("Connecting to APN: "));
-  SerialMon.print(apn);
-  if (!modem.gprsConnect(apn, user, pass)) {
-    SerialMon.println(" fail");
-    delay(10000);
-    return;
-  }
-  SerialMon.println(" OK");
-
-  Blynk.begin(auth, modem, apn, user, pass, blynk_server, blynk_port);
 
   battery_voltage = analogRead(35)*2;
   battery_percent = (battery_voltage-BATTERY_MIN)/(BATTERY_MAX-BATTERY_MIN)*100;
@@ -138,10 +139,8 @@ void loop()
   Blynk.run();
 
   SerialMon.println("Temperature : " + String(Celcius) + "*C\t Voltage is: " + String(battery_voltage/1000) + "\t Charge is: " + String(battery_percent)); 
-  delay(60000); //run every 1 minute
+  delay(60000/30); //run every 1 minute
 }
-
-
 
 bool setPowerBoostKeepOn(int en)
 {
